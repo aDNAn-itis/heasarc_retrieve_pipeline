@@ -273,3 +273,110 @@ def retrieve_heasarc_data_by_source_name(
         )
 
     return results
+<<<<<<< HEAD
+=======
+
+
+@flow
+def retrieve_heasarc_data_by_obsid(
+    source: str,
+    obsid: str,
+    outdir: str,
+    mission: str,
+    radius_deg: float = 0.1,
+    test: bool = False,
+    flags: dict = None,
+):
+    logger = get_run_logger()
+    pos = get_source_position(source)
+    logger.info(f"Source {source} coordinates: RA={pos.ra.deg}, Dec={pos.dec.deg}")
+    results = retrieve_heasarc_table_by_position.fn(
+        pos.ra.deg, pos.dec.deg, mission=mission, radius_deg=radius_deg
+    )
+    logger.info(f"Retrieved {len(results)} observations for {source} from HEASARC query.")
+    matching_rows = [row for row in results if str(row["obsid"]) == str(obsid)]
+    row_to_process = None
+
+    if not matching_rows:
+        logger.warning(
+            f"No observations found for OBSID {obsid} in HEASARC query results for source {source}"
+        )
+        logger.info(
+            f"Proceeding with user-provided OBSID {obsid} and source position for download and processing."
+        )
+        row_to_process = {
+            "obsid": obsid,
+            "time": None,
+            "ra": pos.ra.deg,
+            "dec": pos.dec.deg,
+            "name": source,
+        }
+    else:
+        row_to_process = matching_rows[0]
+        logger.info(
+            f"Found matching observation in HEASARC results for OBSID {obsid}: {row_to_process['name']}"
+        )
+
+    obsid_to_process = str(row_to_process["obsid"])
+    time_for_url = row_to_process.get("time")
+
+    if time_for_url is None and mission == "nicer":
+        logger.warning(f"{obsid_to_process} is not related to the {source}")
+
+    url = remote_data_url(mission, obsid_to_process, time_for_url)
+    download1 = recursive_download(
+        url,
+        outdir,
+        cut_ndirs=0,
+        test_str=".",
+        test=test,
+        wait_for=[remote_data_url],
+        re_include=".*",
+        re_exclude="none",
+    )
+
+    config = {"out_data_path": outdir, "input_data_path": outdir}
+
+    #processing_func = MISSION_CONFIG[mission]["obsid_processing"]
+
+    logger.info(
+        f"Submitting processing for OBSID {obsid_to_process} using {process_nicer_obsid.__name__}"
+    )
+#processing_func
+    process_nicer_obsid(
+        obsid_to_process,
+        config=config,
+        ra=pos.ra.deg,
+        dec=pos.dec.deg,
+        flags=flags,
+        wait_for=[download1],
+    )
+
+    return [row_to_process]
+
+
+@pytest.mark.parametrize(
+    "mission",
+    ["nustar", "nicer"],
+)
+def test_retrieve_heasarc_data_by_source_name(mission):
+    results = retrieve_heasarc_data_by_source_name("M82 X-2", mission=mission, test=True)
+    assert len(results) > 0
+
+
+def test_recursive_download():
+    import shutil
+    import re
+
+    results = recursive_download(
+        "https://heasarc.gsfc.nasa.gov/FTP/nustar/data/obs/00/8/80002092003/",
+        "out_test",
+        cut_ndirs=0,
+        test_str=".",
+        test=False,
+        re_include=r"[AB]0.*evt",
+        re_exclude=r"[AB]0[2-5]",
+    )
+    assert len(results) == 2
+    shutil.rmtree("out_test")
+>>>>>>> 2ba913a (generic flags)
